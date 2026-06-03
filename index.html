@@ -23,7 +23,7 @@
                     <i class="fa-brands fa-telegram text-sky-500 text-4xl"></i>
                     MTProto Proxy Panel
                 </h1>
-                <p class="text-slate-500 mt-1">数据通过 mtproto.shop 实时同步</p>
+                <p class="text-slate-500 mt-1">数据通过 030101.xyz 代理节点实时同步</p>
             </div>
             <div class="mt-4 md:mt-0 flex items-center gap-3">
                 <span id="updateTime" class="text-xs bg-slate-200 text-slate-600 px-3 py-1.5 rounded-full font-mono">
@@ -53,7 +53,8 @@
             <div class="bg-white p-6 rounded-2xl h-44 animate-pulse border border-slate-100"></div>
         </div>
 
-        <div id="proxyGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 hidden"></div>
+        <div id="proxyGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 hidden">
+            </div>
 
         <div id="emptyState" class="hidden text-center py-20 bg-white rounded-2xl border border-dashed border-slate-200">
             <i class="fa-solid fa-box-open text-slate-300 text-5xl mb-3"></i>
@@ -76,17 +77,16 @@
     </div>
 
     <script>
-        // ==================== Cloudflare 优化配置 ====================
+        // 目标 API 地址
         const TARGET_URL = 'https://www.mtproto.shop/proxies.json';
+        // 拼接上你提供的跨域代理前缀
+        const API_URL = `https://proxy.api.030101.xyz/${TARGET_URL}`;
         
-        // 使用稳定的免费 CORS 代理（推荐）
-        const CORS_PROXY = 'https://corsproxy.io/?';
-        const API_URL = `${CORS_PROXY}${encodeURIComponent(TARGET_URL)}`;
-
         let allProxies = [];
         let currentFilter = 'all';
         let searchQuery = '';
 
+        // DOM 节点缓存
         const proxyGrid = document.getElementById('proxyGrid');
         const loadingState = document.getElementById('loadingState');
         const emptyState = document.getElementById('emptyState');
@@ -97,38 +97,43 @@
         const qrModal = document.getElementById('qrModal');
         const qrcodeContainer = document.getElementById('qrcode');
 
+        // 获取数据
         async function fetchProxies() {
             showLoading(true);
             try {
-                const response = await fetch(`${API_URL}&t=${Date.now()}`, { 
-                    cache: 'no-store',
-                    headers: { 'User-Agent': 'MTProto-Panel-CF' }
-                });
-
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
+                // 通过跨域代理 fetch 数据，并加参数防止代理端缓存
+                const response = await fetch(`${API_URL}?t=${Date.now()}`, { cache: 'no-store' });
+                if (!response.ok) throw new Error('API 请求失败');
+                
                 const data = await response.json();
+                
+                // 解构数据
                 allProxies = Array.isArray(data) ? data : (data.proxies || []);
-
-                const updateTime = data.updated_at || new Date();
-                const date = new Date(updateTime);
-                updateTimeSpan.innerText = `更新时间: ${date.toLocaleTimeString('zh-CN')}`;
+                
+                // 渲染时间
+                if (data.updated_at) {
+                    const date = new Date(data.updated_at);
+                    updateTimeSpan.innerText = `更新时间: ${date.toLocaleTimeString()}`;
+                } else {
+                    updateTimeSpan.innerText = `同步时间: ${new Date().toLocaleTimeString()}`;
+                }
 
                 renderList();
             } catch (error) {
                 console.error(error);
-                alert('获取代理列表失败\n\n建议：\n1. 刷新页面重试\n2. 检查网络\n3. 如持续失败可尝试其他CORS代理');
+                alert('获取数据失败，请确认跨域代理服务正常运作。');
             } finally {
                 showLoading(false);
             }
         }
 
+        // 渲染列表
         function renderList() {
             const filtered = allProxies.filter(item => {
                 const matchesSearch = 
-                    (item.location || '').toLowerCase().includes(searchQuery) ||
-                    (item.server || '').toLowerCase().includes(searchQuery) ||
-                    (item.domain || '').toLowerCase().includes(searchQuery);
+                    item.location.toLowerCase().includes(searchQuery) ||
+                    item.server.toLowerCase().includes(searchQuery) ||
+                    (item.domain && item.domain.toLowerCase().includes(searchQuery));
                 
                 const matchesFilter = 
                     currentFilter === 'all' || 
@@ -148,9 +153,11 @@
             proxyGrid.innerHTML = '';
 
             filtered.forEach(proxy => {
+                // 动态构建 Deep-Link
                 const host = proxy.domain || proxy.server;
                 const deepLink = proxy.link || `tg://proxy?server=${host}&port=${proxy.port}&secret=${proxy.secret}`;
-
+                
+                // 状态徽章
                 let statusBadge = `<span class="bg-emerald-50 text-emerald-600 border border-emerald-200 text-xs px-2 py-0.5 rounded-md font-medium">在线</span>`;
                 if (proxy.status === 'slow') {
                     statusBadge = `<span class="bg-amber-50 text-amber-600 border border-amber-200 text-xs px-2 py-0.5 rounded-md font-medium">高延迟</span>`;
@@ -196,6 +203,7 @@
             });
         }
 
+        // 状态控制
         function showLoading(isLoading) {
             if (isLoading) {
                 loadingState.classList.remove('hidden');
@@ -210,12 +218,16 @@
             }
         }
 
+        // 复制功能
         window.copyToClipboard = function(text) {
             navigator.clipboard.writeText(text).then(() => {
-                alert('✅ 代理链接已复制到剪贴板！');
+                alert('代理一键连接链接已复制到剪贴板！');
+            }).catch(err => {
+                console.error('无法复制: ', err);
             });
-        };
+        }
 
+        // 弹出二维码
         window.showQRCode = function(link, name) {
             qrcodeContainer.innerHTML = '';
             document.getElementById('qrTitle').innerText = `${name} - 节点扫描`;
@@ -226,14 +238,14 @@
                 width: 180,
                 height: 180,
                 colorDark: "#0f172a",
-                colorLight: "#f8fafc",
+                colorLight: "#ffffff",
                 correctLevel: QRCode.CorrectLevel.H
             });
             
             qrModal.classList.remove('hidden');
-        };
+        }
 
-        // 事件绑定
+        // 事件监听
         refreshBtn.addEventListener('click', fetchProxies);
         
         searchInput.addEventListener('input', (e) => {
@@ -242,22 +254,23 @@
         });
 
         filterBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                filterBtns.forEach(b => b.classList.remove('bg-sky-50', 'text-sky-600', 'border-sky-100'));
-                filterBtns.forEach(b => b.classList.add('bg-slate-100', 'text-slate-600'));
-                
-                btn.classList.add('bg-sky-50', 'text-sky-600', 'border-sky-100');
-                currentFilter = btn.getAttribute('data-filter');
+            btn.addEventListener('click', (e) => {
+                filterBtns.forEach(b => b.className = 'filter-btn bg-slate-100 text-slate-600 hover:bg-slate-200 px-4 py-1.5 rounded-lg text-sm font-medium cursor-pointer whitespace-nowrap');
+                e.target.className = 'filter-btn bg-sky-50 text-sky-600 px-4 py-1.5 rounded-lg text-sm font-medium border border-sky-100 cursor-pointer whitespace-nowrap';
+                currentFilter = e.target.getAttribute('data-filter');
                 renderList();
             });
         });
 
-        document.getElementById('closeModal').addEventListener('click', () => qrModal.classList.add('hidden'));
+        document.getElementById('closeModal').addEventListener('click', () => {
+            qrModal.classList.add('hidden');
+        });
+        
         qrModal.addEventListener('click', (e) => {
             if (e.target === qrModal) qrModal.classList.add('hidden');
         });
 
-        // 初始化
+        // 首次初始化
         fetchProxies();
     </script>
 </body>
